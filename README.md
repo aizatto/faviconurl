@@ -8,6 +8,12 @@ A usable icon can come from:
 2. <link />
 3. Web Application Manifest
 
+# Install
+
+```sh
+go install cmd/cli/favicons.go
+```
+
 # Resources
 
 ## Favicon

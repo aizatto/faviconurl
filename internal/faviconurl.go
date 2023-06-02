@@ -194,7 +194,7 @@ func fetchLinksFromUrl(url *url.URL) ([]*HtmlLink, error) {
 // 1. Recursive algorithm to find all the <link /> tags
 // 2. Map found <link /> tags to an internal datatype
 func getLinks(u *url.URL, node *html.Node) []*HtmlLink {
-	if !(node.Type == html.ElementNode && node.Data == "link") {
+	if !(node.Type == html.ElementNode && (node.Data == "link" || node.Data == "meta")) {
 		var icons []*HtmlLink
 		for c := node.FirstChild; c != nil; c = c.NextSibling {
 			newIcons := getLinks(u, c)
@@ -206,6 +206,24 @@ func getLinks(u *url.URL, node *html.Node) []*HtmlLink {
 		return icons
 	}
 
+	var link *HtmlLink
+	switch node.Data {
+	case "link":
+		link = newHtmlLinkFromLinkNode(node)
+	case "meta":
+		link = newHtmlLinkFromMetaNode(node)
+	default:
+		fmt.Fprintf(os.Stderr, "Unsupported node element tag: %s", node.Data)
+	}
+
+	if link == nil {
+		return nil
+	}
+
+	return []*HtmlLink{link}
+}
+
+func newHtmlLinkFromLinkNode(node *html.Node) *HtmlLink {
 	linkRelType := ""
 
 	// we do this to handle a race condition, what if `href` is discovered first
@@ -216,7 +234,7 @@ func getLinks(u *url.URL, node *html.Node) []*HtmlLink {
 		value := attr.Val
 		switch attr.Key {
 		case "href":
-			u, err := url.Parse(attr.Val)
+			u, err := url.Parse(value)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error parsing link href %s %v", value, err)
 				return nil
@@ -253,7 +271,40 @@ func getLinks(u *url.URL, node *html.Node) []*HtmlLink {
 		return nil
 	}
 
-	return []*HtmlLink{{Type: linkRelType, Href: hrefUrl}}
+	return &HtmlLink{Type: linkRelType, Href: hrefUrl}
+}
+
+func newHtmlLinkFromMetaNode(node *html.Node) *HtmlLink {
+	// we do this to handle a race condition, what if `href` is discovered first
+	var hrefUrl *url.URL
+	imageTag := false
+
+	// need to collect 2 attributes, rel and the href
+	for _, attr := range node.Attr {
+		value := attr.Val
+		switch attr.Key {
+		case "content":
+			u, err := url.Parse(attr.Val)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing link href %s %v", value, err)
+				return nil
+			}
+			hrefUrl = u
+
+		case "name":
+			if !(value == "og:image" || value == "twitter:image") {
+				return nil
+			}
+
+			imageTag = true
+		}
+	}
+
+	if !imageTag || hrefUrl == nil {
+		return nil
+	}
+
+	return &HtmlLink{Type: "icon", Href: hrefUrl}
 }
 
 func parseFavIconsFromLinks(u *url.URL, link *HtmlLink) []string {
@@ -317,6 +368,10 @@ func fetchFaviconFromManifest(u *url.URL) ([]string, error) {
 }
 
 func resolveUrl(src, new *url.URL) {
+	if !strings.HasPrefix(new.Path, "/") {
+		new.Path = src.Path + "/" + new.Path
+	}
+
 	if new.Scheme == "" {
 		new.Scheme = src.Scheme
 	}
