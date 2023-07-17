@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -328,7 +329,8 @@ func parseFavIconsFromLinks(u *url.URL, link *HtmlLink) []string {
 }
 
 func fetchFaviconFromManifest(u *url.URL) ([]string, error) {
-	_, resp, err := fetchUrl(u.String())
+	ustr := u.String()
+	_, resp, err := fetchUrl(ustr)
 	if err != nil {
 		return nil, err
 	}
@@ -351,6 +353,13 @@ func fetchFaviconFromManifest(u *url.URL) ([]string, error) {
 		return nil, fmt.Errorf("failed to unmarshal manifest: %v", err)
 	}
 
+	upath, err := url.Parse(ustr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stringify manifest path: %v", err)
+	}
+
+	upath.Path = path.Dir(upath.Path)
+
 	favicons := []string{}
 	for _, icon := range manifest.Icons {
 		src := icon.Src
@@ -360,7 +369,7 @@ func fetchFaviconFromManifest(u *url.URL) ([]string, error) {
 			continue
 		}
 
-		resolveUrl(u, srcUrl)
+		resolveUrl(upath, srcUrl)
 		favicons = append(favicons, srcUrl.String())
 	}
 
